@@ -6,10 +6,15 @@
 	objectVersion = 46;
 	objects = {
 
+/* Begin PBXFileReference section */
+		350520611C605A0800288456 /* RiskOdds.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; path = RiskOdds.java; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
 /* Begin PBXGroup section */
 		350520561C6059D200288456 = {
 			isa = PBXGroup;
 			children = (
+				350520611C605A0800288456 /* RiskOdds.java */,
 			);
 			sourceTree = "<group>";
 		};
@@ -18,11 +23,12 @@
 /* Begin PBXLegacyTarget section */
 		3505205B1C6059D200288456 /* RiskOdds */ = {
 			isa = PBXLegacyTarget;
-			buildArgumentsString = "$(ACTION)";
+			buildArgumentsString = "$(ACTION) $(TARGETNAME).java";
 			buildConfigurationList = 3505205E1C6059D200288456 /* Build configuration list for PBXLegacyTarget "RiskOdds" */;
 			buildPhases = (
 			);
 			buildToolPath = /usr/bin/javac;
+			buildWorkingDirectory = "";
 			dependencies = (
 			);
 			name = RiskOdds;
