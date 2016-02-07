@@ -5,9 +5,19 @@ import org.jblas.Solve;
 public class RiskOdds {
     public static void main(String[] args) {
         
+        System.out.println("CURRENTLY BROKEN, SEE CODE AT LINE 483");
+        
         int A = -1; // number of attacking armies
         int D = -1; // number of defending armies
         int places = -1; // number of decimal places to display in table
+        
+        // for single battles, we use the actual dice odds depending on the number of armies in each roll
+        // but if we're calculating the odds of a battle in the middle of a path,
+        // we need to find not the odds of winning the battle, but the odds of winning the battle
+        // with a bunch of armies left over (however many extra we want to save for the rest of the path)
+        // so the odds will assume we're always using 3 dice
+        // so the following boolean should be false if we want to find the odds of a intermediary battle
+        boolean isTerminalBattle = false;
         
         // get inputs for A, D, and places
         Scanner in = new Scanner(System.in).useDelimiter("\n");
@@ -28,12 +38,12 @@ public class RiskOdds {
         } while (places < 0 || places > 10);
 
         // create transient states matrix 'Q'
-        transientStatesMatrix transientStates = new transientStatesMatrix(A,D);
+        transientStatesMatrix transientStates = new transientStatesMatrix(A,D, isTerminalBattle);
         DoubleMatrix Q = transientStates.matrix();
 //        transientStates.print();
         
         // create absorbing states matrix 'R'
-        absorbingStatesMatrix absorbingStates = new absorbingStatesMatrix(A,D);
+        absorbingStatesMatrix absorbingStates = new absorbingStatesMatrix(A,D, isTerminalBattle);
         DoubleMatrix R = absorbingStates.matrix();
 //        absorbingStates.print();
 
@@ -55,9 +65,12 @@ public class RiskOdds {
 //        resultMatrix.print();
         
         // create table of probabilities for attacker winning each matchup up to A vs D
+        double threshold = 0.78d;
         probabilitiesTable probTable = new probabilitiesTable(A,D,F);
         probTable.print(places);
+        probTable.printArmiesNeeded(threshold);
         
+        probTable.temp(threshold);
     }
  
     // creates a matrix of the probability of the attacker winning the battle,
@@ -84,7 +97,7 @@ public class RiskOdds {
         }
         
         // display table with labeled axes to precision 'places'
-        public void print(int places) {
+        public void print(int places, double threshold) {
             // set formatting for precision
             if (places < 0) {
                 places = 0;
@@ -108,10 +121,17 @@ public class RiskOdds {
                 String thisRow = "" + (row + 1) + spaces(digits(row + 1, armiesD)) + " |"; // the row label is the number of defending armies (plus some spaces for alignment purposes)
                 for (int col=0; col<matrix.columns; col++) {
                     double el = matrix.get(row,col) + 0.0d; // (we add 0.0 to get rid of negative signed zeros)
-                    thisRow += " " + String.format(placesString, el) + " "; // display to 2 decimal places of precision
+                    if (el < threshold) {
+                        thisRow += " " + spaces(places + 2) + " ";
+                    } else {
+                        thisRow += " " + String.format(placesString, el) + " "; // display to 2 decimal places of precision
+                    }
                 }
                 System.out.println(thisRow);
             }
+        }
+        public void print(int places) {
+            print(places, -1000d);
         }
         public void print() {
             print(2); // print with 2 decimal places by default
@@ -164,14 +184,43 @@ public class RiskOdds {
             
             return table;
         }
+        
+        // print a number of defending armies + number of attacking armies it will take to beat them at the given odds
+        public void printArmiesNeeded(int defenders, double winningOdds) {
+            for (int col=0; col<matrix.columns; col++) {
+                if (matrix.get(defenders-1,col) >= winningOdds) {
+                    System.out.println(defenders + " " + (col + 1));
+                    break;
+                }
+            }
+        }
+        public void printArmiesNeeded(double winningOdds) {
+            for (int row=0; row<matrix.rows; row++) {
+                printArmiesNeeded(row+1, winningOdds);
+            }
+        }
+        
+        public void temp(double winningOdds) {
+            for (int row=0; row<matrix.rows; row++) {
+                int defenders = row + 1;
+                for (int col=0; col<matrix.columns; col++) {
+                    if (matrix.get(defenders-1,col) >= winningOdds) {
+                        int attackers = col + 1;
+                        double padding = attackers - ((double) defenders * (7161d / 8391d));
+                        System.out.println(defenders + " " + padding);
+                        break;
+                    }
+                }
+            }
+        }
     }
     
     public static class transientStatesMatrix extends transitionMatrix {
 
         // constructor
-        public transientStatesMatrix(int attackingArmies, int defendingArmies) {
+        public transientStatesMatrix(int attackingArmies, int defendingArmies, boolean isTerminalBattle) {
             // call the parent constructor
-            super(attackingArmies, defendingArmies);
+            super(attackingArmies, defendingArmies, isTerminalBattle);
             
             // the matrix is armiesA*armiesD x armiesA*armiesD
             int dimensions = armiesA * armiesD;
@@ -221,9 +270,9 @@ public class RiskOdds {
     public static class absorbingStatesMatrix extends transitionMatrix {
         
         // constructor
-        public absorbingStatesMatrix(int attackingArmies, int defendingArmies) {
+        public absorbingStatesMatrix(int attackingArmies, int defendingArmies, boolean isTerminalBattle) {
             // call the parent constructor
-            super(attackingArmies, defendingArmies);
+            super(attackingArmies, defendingArmies, isTerminalBattle);
             
             // instantiate the matrix and populate initially with zeros
             // the matrix is armiesA*armiesD x armiesA + armiesD
@@ -267,16 +316,18 @@ public class RiskOdds {
         }
     }
     
-    // transientMatrix class forms a transition matrix
+    // transitionMatrix class forms a transition matrix
     protected static class transitionMatrix extends riskMatrix {
         protected int armiesA;
         protected int armiesD;
+        protected boolean isTerminal;
         
         // constructor
-        public transitionMatrix(int attackingArmies, int defendingArmies) {
+        public transitionMatrix(int attackingArmies, int defendingArmies, boolean isTerminalBattle) {
             super();
             this.armiesA = attackingArmies;
             this.armiesD = defendingArmies;
+            this.isTerminal = isTerminalBattle;
         }
         
         // override parent print method so we can display the number of armies for the matrix
@@ -308,84 +359,146 @@ public class RiskOdds {
             
             if (aDiff >= 0 && aDiff <= totalLoss && dDiff >= 0 && dDiff <= totalLoss && aDiff + dDiff == totalLoss) {
                 
-                // 3 v 2
-                if (aDice == 3 && dDice == 2) {
-                    // a lose 2
-                    if (aDiff == 2) {
-                        odds = 2275d / 7776d;
-                    }
-                    // split
-                    if (aDiff == 1) {
-                        odds = 2611d / 7776d;
-                    }
-                    // d lose 2
-                    if (dDiff == 2) {
-                        odds = 2890d / 7776d;
-                    }
-                }
+                // isTerminal is a boolean which tells us whether we're calculating for a regular battle
+                // or an intermediary battle. If it's true, we want to use the regular odds.
+                // if it's false, then we want to calculate for an intermediary battle,
+                // where we want to know the odds of winning the battle as though we always got to roll
+                // 3 dice. That's because in the game, we'll have extra armies on the country that we're
+                // saving for future battles along the path
+                if (isTerminal == true) {
                 
-                // 3 v 1
-                if (aDice == 3 && dDice == 1) {
-                    // a loses 1
-                    if (aDiff == 1) {
-                        odds = 441d / 1296d;
+                    // 3 v 2
+                    if (aDice == 3 && dDice == 2) {
+                        // a lose 2
+                        if (aDiff == 2) {
+                            odds = 2275d / 7776d;
+                        }
+                        // split
+                        if (aDiff == 1) {
+                            odds = 2611d / 7776d;
+                        }
+                        // d lose 2
+                        if (dDiff == 2) {
+                            odds = 2890d / 7776d;
+                        }
                     }
-                    // d loses 1
-                    if (dDiff == 1) {
-                        odds = 855d / 1296d;
+                    
+                    // 3 v 1
+                    if (aDice == 3 && dDice == 1) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 441d / 1296d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 855d / 1296d;
+                        }
                     }
-                }
-                
-                // 2 v 2
-                if (aDice == 2 && dDice == 2) {
-                    // a loses 2
-                    if (aDiff == 2) {
-                        odds = 581d / 1296d;
+                    
+                    // 2 v 2
+                    if (aDice == 2 && dDice == 2) {
+                        // a loses 2
+                        if (aDiff == 2) {
+                            odds = 581d / 1296d;
+                        }
+                        // split
+                        if (aDiff == 1) {
+                            odds = 420d / 1296d;
+                        }
+                        // d loses 2
+                        if (dDiff == 2) {
+                            odds = 295d / 1296d;
+                        }
                     }
-                    // split
-                    if (aDiff == 1) {
-                        odds = 420d / 1296d;
+                    
+                    // 2 v 1
+                    if (aDice == 2 && dDice == 1) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 91d / 216d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 125d / 216d;
+                        }
                     }
-                    // d loses 2
-                    if (dDiff == 2) {
-                        odds = 295d / 1296d;
+                    
+                    // 1 v 2
+                    if (aDice == 1 && dDice == 2) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 161d / 216d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 55d / 216d;
+                        }
                     }
-                }
-                
-                // 2 v 1
-                if (aDice == 2 && dDice == 1) {
-                    // a loses 1
-                    if (aDiff == 1) {
-                        odds = 91d / 216d;
+                    
+                    // 1 v 1
+                    if (aDice == 1 && dDice == 1) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 21d / 36d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 15d / 36d;
+                        }
                     }
-                    // d loses 1
-                    if (dDiff == 1) {
-                        odds = 125d / 216d;
+                } else {
+                    // if we're here, isTerminal is false, so we want to pretend the attacker
+                    // always gets to roll three dice, no matter how few armies he has
+                    
+                    // 3 v 2 and 2 v 2
+                    if ((aDice == 3 || aDice == 2) && dDice == 2) {
+                        // a lose 2
+                        if (aDiff == 2) {
+                            odds = 2275d / 7776d;
+                        }
+                        // split
+                        if (aDiff == 1) {
+                            odds = 2611d / 7776d;
+                        }
+                        // d lose 2
+                        if (dDiff == 2) {
+                            odds = 2890d / 7776d;
+                        }
                     }
-                }
-                
-                // 1 v 2
-                if (aDice == 1 && dDice == 2) {
-                    // a loses 1
-                    if (aDiff == 1) {
-                        odds = 161d / 216d;
+                    
+                    // 3 v 1 and 2 v 1 and 1 v 1
+                    if (dDice == 1) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 441d / 1296d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 855d / 1296d;
+                        }
                     }
-                    // d loses 1
-                    if (dDiff == 1) {
-                        odds = 55d / 216d;
+                    
+                    // 1 v 2
+                    
+                    // THIS BLOCK IS CURRENTLY BROKEN;
+                    // NEED TO FIGURE OUT THE ACTUAL STATES THE BATTLE CAN GO INTO
+                    // WHEN ROLLING 3 DICE WITH ONLY ONE ARMY
+                    // SOME OF THOSE STATES WILL VIOLATE THE LONG CONDITIONAL
+                    // WE SET UP ABOVE, SO WE NEED TO MOVE OUT OF IT?
+                    
+                    if (aDice == 1 && dDice == 2) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            // (these are actually the 3v2 odds of a split plus the odds of attacker losing 2)
+                            odds = 4886d / 7776d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            // (these are actually the 3v2 odds of defender losing 2)
+                            odds = 2890d / 7776d;
+                        }
                     }
-                }
-                
-                // 1 v 1
-                if (aDice == 1 && dDice == 1) {
-                    // a loses 1
-                    if (aDiff == 1) {
-                        odds = 21d / 36d;
-                    }
-                    // d loses 1
-                    if (dDiff == 1) {
-                        odds = 15d / 36d;
-                    }
+
                 }
             }
             
