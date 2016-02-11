@@ -2,10 +2,21 @@ import java.util.*;
 import org.jblas.DoubleMatrix;
 import org.jblas.Solve;
 
+/***************************************************************
+ *
+ * Calculates odds of Risk battles
+ * based on Markov chain probabilities
+ * as described in this paper:
+ * http://www4.stat.ncsu.edu/~jaosborn/research/RISK.pdf
+ *
+ * Requires jblas library for linear algebra:
+ * http://jblas.org
+ * (written using V1.2.4)
+ *
+/***************************************************************/
+
 public class RiskOdds {
     public static void main(String[] args) {
-        
-        System.out.println("CURRENTLY BROKEN, SEE CODE AT LINE 483");
         
         int A = -1; // number of attacking armies
         int D = -1; // number of defending armies
@@ -15,9 +26,11 @@ public class RiskOdds {
         // but if we're calculating the odds of a battle in the middle of a path,
         // we need to find not the odds of winning the battle, but the odds of winning the battle
         // with a bunch of armies left over (however many extra we want to save for the rest of the path)
-        // so the odds will assume we're always using 3 dice
-        // so the following boolean should be false if we want to find the odds of a intermediary battle
+        // so the odds will assume we're always using 3 dice;
+        // so the following boolean should be false if we want to find the odds of a intermediary battle;
+        // set this to true to find the odds for a normal, single battle
         boolean isTerminalBattle = false;
+        System.out.println("Calculating for " + (isTerminalBattle ? "TERMINAL BATTLE (normal)" : "INTERMEDIATE BATTLE (always 3 attacking dice)"));
         
         // get inputs for A, D, and places
         Scanner in = new Scanner(System.in).useDelimiter("\n");
@@ -65,12 +78,15 @@ public class RiskOdds {
 //        resultMatrix.print();
         
         // create table of probabilities for attacker winning each matchup up to A vs D
-        double threshold = 0.78d;
         probabilitiesTable probTable = new probabilitiesTable(A,D,F);
         probTable.print(places);
+        
+        // print list of armies needed to fight battle with the given probability of winning ('threshold')
+        // 'threshold' should be >= 0 and < 1
+        double threshold = 0.78d;
         probTable.printArmiesNeeded(threshold);
         
-        probTable.temp(threshold);
+//        probTable.printPaddingOverEvenOdds(threshold);
     }
  
     // creates a matrix of the probability of the attacker winning the battle,
@@ -195,12 +211,15 @@ public class RiskOdds {
             }
         }
         public void printArmiesNeeded(double winningOdds) {
+            String percentage = String.format("%.1f", winningOdds * 100);
+            System.out.println("Armies needed to win at " + percentage + "% confidence (defending, attacking):");
+            
             for (int row=0; row<matrix.rows; row++) {
                 printArmiesNeeded(row+1, winningOdds);
             }
         }
         
-        public void temp(double winningOdds) {
+        public void printPaddingOverEvenOdds(double winningOdds) {
             for (int row=0; row<matrix.rows; row++) {
                 int defenders = row + 1;
                 for (int col=0; col<matrix.columns; col++) {
@@ -232,6 +251,12 @@ public class RiskOdds {
             populateMatrix();
         }
         
+        // print the matrix
+        public void print() {
+            System.out.println("[Q] - Transient States matrix");
+            super.print();
+        }
+        
         // we need our own populateRow() method for transient states
         protected DoubleMatrix populateRow(int row) {
             DoubleMatrix thisRow = DoubleMatrix.zeros(1,matrix.columns);
@@ -251,12 +276,7 @@ public class RiskOdds {
                 
                 //                message += " (" + aOut + "," + dOut + ")";
                 
-                // how many dice were rolled this turn
-                int aDice = Math.min(aIn,3);
-                int dDice = Math.min(dIn,2);
-                int aDiff = aIn - aOut;
-                int dDiff = dIn - dOut;
-                double odds = getOdds(aDice, dDice, aDiff, dDiff);
+                double odds = getOdds(aIn, dIn, aOut, dOut);
                 
                 thisRow.put(col, odds);
             }
@@ -282,6 +302,12 @@ public class RiskOdds {
             populateMatrix();
         }
         
+        // print the matrix
+        public void print() {
+            System.out.println("[R] - Absorbing States matrix");
+            super.print();
+        }
+        
         // we need our own populateRow() method for absorbing states
         protected DoubleMatrix populateRow(int row) {
             DoubleMatrix thisRow = DoubleMatrix.zeros(1,matrix.columns);
@@ -300,12 +326,7 @@ public class RiskOdds {
                 
 //                message += " (" + aOut + "," + dOut + ")";
                 
-                // how many dice were rolled this turn
-                int aDice = Math.min(aIn,3);
-                int dDice = Math.min(dIn,2);
-                int aDiff = aIn - aOut;
-                int dDiff = dIn - dOut;
-                double odds = getOdds(aDice, dDice, aDiff, dDiff);
+                double odds = getOdds(aIn, dIn, aOut, dOut);
                 
                 thisRow.put(col, odds);
             }
@@ -352,20 +373,33 @@ public class RiskOdds {
             return thisRow;
         }
     
-        // retrieve the odds of the given losses with the given number of dice
-        protected double getOdds(int aDice, int dDice, int aDiff, int dDiff) {
-            int totalLoss = Math.min(aDice,dDice);
+        // retrieve the odds of the given outcome (aOut and dOut) for a battle between the given armies (aIn and dIn)
+        protected double getOdds(int aIn, int dIn, int aOut, int dOut) {
             double odds = 0.0d;
             
-            if (aDiff >= 0 && aDiff <= totalLoss && dDiff >= 0 && dDiff <= totalLoss && aDiff + dDiff == totalLoss) {
+            // isTerminal is a boolean which tells us whether we're calculating for a regular battle
+            // or an intermediary battle. If it's true, we want to use the regular odds.
+            // if it's false, then we want to calculate for an intermediary battle,
+            // where we want to know the odds of winning the battle as though we always got to roll
+            // 3 dice. That's because in the game, we'll have extra armies on the country that we're
+            // saving for future battles along the path
+            if (isTerminal == true) {
                 
-                // isTerminal is a boolean which tells us whether we're calculating for a regular battle
-                // or an intermediary battle. If it's true, we want to use the regular odds.
-                // if it's false, then we want to calculate for an intermediary battle,
-                // where we want to know the odds of winning the battle as though we always got to roll
-                // 3 dice. That's because in the game, we'll have extra armies on the country that we're
-                // saving for future battles along the path
-                if (isTerminal == true) {
+                // the number of dice rolled
+                int aDice = Math.min(aIn,3);
+                int dDice = Math.min(dIn,2);
+                
+                // the difference between the input and the outcome for each player
+                int aDiff = aIn - aOut;
+                int dDiff = dIn - dOut;
+                
+                // the number of dice compared between attacker and defender
+                int numDiceCompared = Math.min(aDice,dDice);
+            
+                // this conditional limits us to cells in the matrix where a dice roll could actually lead us
+                // i.e. nobody can gain armies in a battle, and the total loss to both attacker and defender
+                // must equal the number of dice compared between the attacker and defender
+                if (aDiff >= 0 && aDiff <= numDiceCompared && dDiff >= 0 && dDiff <= numDiceCompared && aDiff + dDiff == numDiceCompared) {
                 
                     // 3 v 2
                     if (aDice == 3 && dDice == 2) {
@@ -446,12 +480,53 @@ public class RiskOdds {
                             odds = 15d / 36d;
                         }
                     }
+                }
+                
+            } else {
+                // if we're here, isTerminal is false, so we want to pretend the attacker
+                // always gets to roll three dice, no matter how few armies he has
+                int aDice = 3;
+                int dDice = Math.min(dIn,2);
+                
+                // the difference between the input and the outcome for each player
+                int aDiff = aIn - aOut;
+                int dDiff = dIn - dOut;
+                
+                // the number of dice compared between attacker and defender
+                int numDiceCompared = Math.min(aDice,dDice);
+                
+                // if aIn == 1 and aOut == 0, aDiff + dDiff should be <= numDiceCompared, otherwise it should be equal
+                // this weird ad hoc constraint is due to the fact that the attacker can roll three dice even when he only has one army
+                // so if the defender happens to have 2 dice, the attacker would normally lose more armies than he has;
+                // so in this case, we'll want to stipulate that the attacker ends up with 0 armies, not -1 or -2
+                // because our absorbing states matrix doesn't have cells for negative armies
+                boolean goodTotalLoss = false;
+                if (aIn == 1 && aOut == 0) {
+                    goodTotalLoss = aDiff + dDiff <= numDiceCompared;
                 } else {
-                    // if we're here, isTerminal is false, so we want to pretend the attacker
-                    // always gets to roll three dice, no matter how few armies he has
+                    goodTotalLoss = aDiff + dDiff == numDiceCompared;
+                }
+                
+                // this conditional limits us to cells in the matrix where a dice roll could actually lead us
+                // i.e. nobody can gain armies in a battle, and the total loss adds up per above
+                if (aDiff >= 0 && aDiff <= numDiceCompared && dDiff >= 0 && dDiff <= numDiceCompared && goodTotalLoss == true) {
+                
+                    // 3 v 1
+                    // (these are the actual 3 v 1 odds)
+                    if (dIn == 1) {
+                        // a loses 1
+                        if (aDiff == 1) {
+                            odds = 441d / 1296d;
+                        }
+                        // d loses 1
+                        if (dDiff == 1) {
+                            odds = 855d / 1296d;
+                        }
+                    }
                     
-                    // 3 v 2 and 2 v 2
-                    if ((aDice == 3 || aDice == 2) && dDice == 2) {
+                    // 3 v 2 where attacking armies is > 1
+                    // (these are the actual 3 v 2 odds)
+                    if (aIn > 1 && dIn > 1) {
                         // a lose 2
                         if (aDiff == 2) {
                             odds = 2275d / 7776d;
@@ -466,42 +541,29 @@ public class RiskOdds {
                         }
                     }
                     
-                    // 3 v 1 and 2 v 1 and 1 v 1
-                    if (dDice == 1) {
-                        // a loses 1
-                        if (aDiff == 1) {
-                            odds = 441d / 1296d;
+                    // 3 v 2 where attacking armies == 1
+                    // this is the tricky one
+                    if (aIn == 1 && dIn > 1) {
+                        // a loses 1, d loses 0
+                        if (aDiff == 1 && dDiff == 0) {
+                            // (these are actually the 3v2 odds of attacker losing 2)
+                            odds = 2275d / 7776d;
                         }
-                        // d loses 1
-                        if (dDiff == 1) {
-                            odds = 855d / 1296d;
+                        // split
+                        if (aDiff == 1 && dDiff == 1) {
+                            // (these are the actual odds of a 3v2 split)
+                            odds = 2611d / 7776d;
                         }
-                    }
-                    
-                    // 1 v 2
-                    
-                    // THIS BLOCK IS CURRENTLY BROKEN;
-                    // NEED TO FIGURE OUT THE ACTUAL STATES THE BATTLE CAN GO INTO
-                    // WHEN ROLLING 3 DICE WITH ONLY ONE ARMY
-                    // SOME OF THOSE STATES WILL VIOLATE THE LONG CONDITIONAL
-                    // WE SET UP ABOVE, SO WE NEED TO MOVE OUT OF IT?
-                    
-                    if (aDice == 1 && dDice == 2) {
-                        // a loses 1
-                        if (aDiff == 1) {
-                            // (these are actually the 3v2 odds of a split plus the odds of attacker losing 2)
-                            odds = 4886d / 7776d;
-                        }
-                        // d loses 1
-                        if (dDiff == 1) {
-                            // (these are actually the 3v2 odds of defender losing 2)
+                        // d loses 2
+                        if (dDiff == 2) {
+                            // (these are the actual 3v2 odds of defender losing 2)
                             odds = 2890d / 7776d;
                         }
                     }
-
+                
                 }
             }
-            
+
             return odds;
         }
     }
