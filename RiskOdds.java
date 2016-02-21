@@ -13,6 +13,9 @@ import org.jblas.Solve;
  * http://jblas.org
  * (written using V1.2.4)
  *
+ * Written by John Torgerson, 2016
+ * Feel free to use or modify for any purpose
+ *
 /***************************************************************/
 
 public class RiskOdds {
@@ -65,7 +68,7 @@ public class RiskOdds {
         riskMatrix unityMatrix = new riskMatrix(I);
 //        unityMatrix.print();
 
-        // create matrix 'N' == (I-Q)^-1
+        // create fundamental matrix 'N' == (I-Q)^-1
         DoubleMatrix N = new DoubleMatrix(A*D, A*D);
         N = Solve.pinv(I.sub(Q));
         riskMatrix fundamentalMatrix = new riskMatrix(N);
@@ -83,9 +86,17 @@ public class RiskOdds {
         
         // print list of armies needed to fight battle with the given probability of winning ('threshold')
         // 'threshold' should be >= 0 and < 1
-        double threshold = 0.78d;
-        probTable.printArmiesNeeded(threshold);
+        double threshold = 0.95d;
+//        probTable.printArmiesNeeded(threshold);
         
+        // this prints the number of armies needed to beat the given number of defenders
+        // at the given probability threshold, minus the following value: (7161 / 8391 * defenders)
+        // the reason for doing this was so that we could do a regression fit on these coordinates
+        // (which turns out to be some constant * defenders ^ some power less than 1)
+        // in order to find a function that gives the number of attackers needed to beat any number of defenders
+        // at the given probability threshold;
+        // to be explicit, this formula always takes the following form:
+        // 7161 / 8391 * defenders + constant1 * defenders ^ constant2 (where constant 2 seems usually to be somewhat less than 0.5)
 //        probTable.printPaddingOverEvenOdds(threshold);
     }
  
@@ -205,7 +216,22 @@ public class RiskOdds {
         public void printArmiesNeeded(int defenders, double winningOdds) {
             for (int col=0; col<matrix.columns; col++) {
                 if (matrix.get(defenders-1,col) >= winningOdds) {
+                    
+                    double function = 0.0d;
+                    
+                    // below are some empirically determined formulas we wanted to print here to test their accuracy
+                    
+                    // 78% certainty formulas:
+                    //function = (7161d / 8391d) * (double) defenders + (1.7273d * Math.pow((double) defenders,.4301d)); // terminal
+                    //function = (7161d / 8391d) * (double) defenders + (1.3316d * Math.pow((double) defenders,.4665d)); // intermediate
+                    
+                    // 95% certainty formulas:
+                    //function = (7161d / 8391d) * (double) defenders + (3.6325d * Math.pow((double) defenders,.4329d)); // terminal
+                    //function = (7161d / 8391d) * (double) defenders + (2.8185d * Math.pow((double) defenders,.4933d)); // intermediate
+                    
+                    //System.out.println(defenders + " " + (col + 1) + " - " + Math.round(function) + " (" + function + ")");
                     System.out.println(defenders + " " + (col + 1));
+
                     break;
                 }
             }
